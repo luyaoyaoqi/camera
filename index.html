@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>网页拍照示例（带相机切换）</title>
+  <style>
+    /* 添加基本样式 */
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      text-align: center;
+    }
+
+    #video-container {
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #video-mask {
+      position: absolute;
+      display: inline-block;
+      border: 2px dashed #fff;
+    }
+
+    #video {
+      width: 50vmin;
+      height: 50vmin;
+      object-fit: cover;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 5px;
+      margin-top: 16px;
+    }
+
+    #photo-container {
+      margin-top: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>网页拍照</h1>
+  <div id="video-container">
+    <video id="video" autoplay></video>
+    <div id="video-mask"></div>
+  </div>
+  <button onclick="takePhoto()">拍照</button>
+  <button onclick="switchSquare()">正方形</button>
+  <button onclick="switchCamera()">切换相机</button>
+  <button onclick="rotateCamera()">旋转相机</button>
+  <div id="photo-container"><canvas id="canvas"></canvas></div>
+
+  <script>
+    let stream;
+    let video = document.getElementById("video");
+    let canvas = document.getElementById("canvas");
+    let videoContainer = document.getElementById("video-container");
+    let videoMask = document.getElementById("video-mask");
+    let currentFacingMode = 'environment'; // 默认使用后置摄像头
+    let photoContainer = document.getElementById("photo-container");
+    let rotateVideo = 0; // 视频旋转角度 (0, 90, 180, 270)
+    let imgIsSquare = false; // 是否裁剪为正方形
+
+    // 初始化摄像头
+    function initCamera(facingMode) {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const minSize = 720; // 最小分辨率
+      const constraints = {
+        video: {
+          facingMode: facingMode,
+          width: { ideal: minSize * 16 / 9 },
+          height: { ideal: minSize },
+        }
+      };
+
+      navigator.mediaDevices
+        .getUserMedia(constraints)
+        .then(function (s) {
+          stream = s;
+          video.srcObject = s;
+          // 获取视频轨道并显示设备支持的分辨率
+          const videoTrack = stream.getVideoTracks()[0];
+          const capabilities = videoTrack.getCapabilities();
+          console.log(`相机支持的分辨率范围: ${capabilities.width.min}x${capabilities.height.min} 至 ${capabilities.width.max}x${capabilities.height.max}`)
+
+          // 视频元数据加载后获取实际宽高比例
+          return new Promise((resolve) => {
+            video.onloadedmetadata = () => {
+              const videoWidth = video.videoWidth;
+              const videoHeight = video.videoHeight;
+              console.log(`视频宽度: ${videoWidth}, 视频高度: ${videoHeight}, 比例: ${videoWidth / videoHeight}`);
+
+              // 计算宽高比并设置容器样式
+              if (videoWidth && videoHeight) {
+                const aspectRatio = videoWidth / videoHeight;
+                video.style.width = `${video.offsetHeight * aspectRatio}px`;
+                video.setAttribute('width', video.style.width);
+                video.style.height = `${video.offsetHeight}px`;
+                video.setAttribute('height', video.style.height);
+                videoMask.style.width = video.style.height;
+                videoMask.style.height = video.style.height;
+                setSquare();
+              }
+
+              resolve();
+            };
+          });
+        })
+        .catch(function (error) {
+          console.error("无法获取摄像头: ", error);
+          alert("无法访问摄像头，请确保您已授予权限。");
+        });
+    }
+
+    // 拍照函数
+    function takePhoto() {
+      const displayWidth = video.offsetWidth;
+      const displayHeight = video.offsetHeight;
+
+      // 根据旋转角度确定Canvas尺寸
+      const canvasWidth = (rotateVideo === 90 || rotateVideo === 270) ? displayHeight : displayWidth;
+      const canvasHeight = (rotateVideo === 90 || rotateVideo === 270) ? displayWidth : displayHeight;
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+
+      const ctx = canvas.getContext("2d");
+
+      if (rotateVideo === 90) {
+        // 顺时针旋转90度
+        ctx.translate(canvasWidth, 0);
+        ctx.rotate(90 * Math.PI / 180);
+      } else if (rotateVideo === 180) {
+        // 旋转180度
+        ctx.translate(canvasWidth, canvasHeight);
+        ctx.rotate(180 * Math.PI / 180);
+      } else if (rotateVideo === 270) {
+        // 逆时针旋转90度(或顺时针270度)
+        ctx.translate(0, canvasHeight);
+        ctx.rotate(-90 * Math.PI / 180);
+      }
+
+      // 绘制视频内容
+      ctx.drawImage(
+        video,
+        0,
+        0,
+        displayWidth,
+        displayHeight);
+
+      // 创建并显示图片
+      const img = document.createElement("img");
+
+      // 如果需要裁剪为正方形，则进行裁剪 
+      if (imgIsSquare) {
+        const minDimension = Math.min(canvasWidth, canvasHeight);
+        const startX = (canvasWidth - minDimension) / 2;
+        const startY = (canvasHeight - minDimension) / 2;
+        const croppedCanvas = document.createElement("canvas");
+        croppedCanvas.width = minDimension;
+        croppedCanvas.height = minDimension;
+        const croppedCtx = croppedCanvas.getContext("2d");
+        croppedCtx.drawImage(canvas, startX, startY, minDimension, minDimension,
+          0, 0, minDimension, minDimension);
+        img.src = croppedCanvas.toDataURL("image/png");
+      } else {
+        img.src = canvas.toDataURL("image/png");
+      }
+
+      img.style.maxWidth = "100%";
+      img.alt = "拍摄的照片";
+
+      photoContainer.innerHTML = '';
+      photoContainer.appendChild(img);
+    }
+
+
+    //控制正方形显示
+    function setSquare() {
+      if (imgIsSquare) {
+        videoContainer.style.width = video.style.height;
+        videoContainer.style.height = video.style.height;
+        videoContainer.style.removeProperty('zoom');
+        photoContainer.style.removeProperty('zoom');
+      } else {
+        if (rotateVideo === 90 || rotateVideo === 270) {
+          videoContainer.style.width = video.offsetHeight + 'px';
+          videoContainer.style.height = video.offsetWidth + 'px';
+          videoContainer.style.zoom = `calc(${video.offsetHeight / video.offsetWidth})`;
+          photoContainer.style.zoom = `calc(${video.offsetHeight / video.offsetWidth})`;
+        } else {
+          videoContainer.style.width = video.style.width;
+          videoContainer.style.height = video.style.height;
+          videoContainer.style.removeProperty('zoom');
+          photoContainer.style.removeProperty('zoom');
+        }
+      }
+    }
+
+    function switchSquare() {
+      imgIsSquare = !imgIsSquare; // 切换正方形裁剪状态
+      setSquare();
+    }
+
+    // 切换相机函数
+    function switchCamera() {
+      currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+      initCamera(currentFacingMode);
+    }
+
+    // 旋转相机函数
+    function setCamera() {
+      video.style.transform = `rotate(${rotateVideo}deg)`;
+    }
+
+    function rotateCamera() {
+      // 在0, 90, 180, 270之间循环切换
+      if (rotateVideo === 0) {
+        rotateVideo = 90;
+      } else if (rotateVideo === 90) {
+        rotateVideo = 180;
+      } else if (rotateVideo === 180) {
+        rotateVideo = 270;
+      } else if (rotateVideo === 270) {
+        rotateVideo = 0;
+      }
+      
+      setCamera();
+      setSquare();
+    }
+
+    // 页面加载时初始化摄像头
+    document.addEventListener('DOMContentLoaded', () => {
+      initCamera(currentFacingMode);
+    });
+
+    setCamera();
+    setSquare();
+
+  </script>
+</body>
+
+</html>
