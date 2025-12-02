@@ -56,6 +56,7 @@
   <button onclick="switchSquare()">正方形</button>
   <button onclick="switchCamera()">切换相机</button>
   <button onclick="rotateCamera()">旋转相机</button>
+  <button onclick="switchAspectRatio()">切换比例</button>
   <div id="photo-container"><canvas id="canvas"></canvas></div>
 
   <script>
@@ -68,6 +69,11 @@
     let photoContainer = document.getElementById("photo-container");
     let rotateVideo = 0; // 视频旋转角度 (0, 90, 180, 270)
     let imgIsSquare = false; // 是否裁剪为正方形
+    let aspectRatios = [ 
+      { width: 16, height: 9 },  // 16:9 比例
+      { width: 4, height: 3 }    // 4:3 比例
+    ];
+    let currentAspectRatioIndex = 0; // 当前使用的比例索引
 
     // 初始化摄像头
     function initCamera(facingMode) {
@@ -76,10 +82,11 @@
       }
 
       const minSize = 720; // 最小分辨率
+      const currentRatio = aspectRatios[currentAspectRatioIndex];
       const constraints = {
         video: {
           facingMode: facingMode,
-          width: { ideal: minSize * 16 / 9 },
+          width: { ideal: minSize * currentRatio.width / currentRatio.height },
           height: { ideal: minSize },
         }
       };
@@ -237,6 +244,14 @@
       
       setCamera();
       setSquare();
+    }
+
+    // 切换画面比例
+    function switchAspectRatio() {
+      currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.length;
+      const ratio = aspectRatios[currentAspectRatioIndex];
+      console.log(`切换到 ${ratio.width}:${ratio.height} 比例`);
+      initCamera(currentFacingMode);
     }
 
     // 页面加载时初始化摄像头
