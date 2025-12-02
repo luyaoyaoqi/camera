@@ -52,11 +52,11 @@
     <video id="video" autoplay></video>
     <div id="video-mask"></div>
   </div>
-  <button onclick="takePhoto()">拍照</button>
-  <button onclick="switchSquare()">正方形</button>
-  <button onclick="switchCamera()">切换相机</button>
-  <button onclick="rotateCamera()">旋转相机</button>
-  <button onclick="switchAspectRatio()">切换比例</button>
+  <button onclick="takePhoto()">拍照 📷</button>
+  <button onclick="switchSquare()">正方形裁切 ◼️</button>
+  <button onclick="switchCamera()">切换相机 🔄</button>
+  <button onclick="rotateCamera()">旋转相机 🔄</button>
+  <button onclick="switchAspectRatio()">相机比例 16:9</button>
   <div id="photo-container"><canvas id="canvas"></canvas></div>
 
   <script>
@@ -69,7 +69,7 @@
     let photoContainer = document.getElementById("photo-container");
     let rotateVideo = 0; // 视频旋转角度 (0, 90, 180, 270)
     let imgIsSquare = false; // 是否裁剪为正方形
-    let aspectRatios = [ 
+    let aspectRatios = [
       { width: 16, height: 9 },  // 16:9 比例
       { width: 4, height: 3 }    // 4:3 比例
     ];
@@ -81,32 +81,71 @@
         stream.getTracks().forEach(track => track.stop());
       }
 
-      const minSize = 720; // 最小分辨率
-      const currentRatio = aspectRatios[currentAspectRatioIndex];
-      const constraints = {
-        video: {
-          facingMode: facingMode,
-          width: { ideal: minSize * currentRatio.width / currentRatio.height },
-          height: { ideal: minSize },
-        }
-      };
+      // 首先获取摄像头能力，再设置合适的分辨率
+      navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          if (videoDevices.length > 0) {
+            // 先请求一个基础流以获取摄像头能力
+            return navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
+          } else {
+            throw new Error("未找到视频设备");
+          }
+        })
+        .then(tempStream => {
+          // 获取视频轨道及其能力
+          const videoTrack = tempStream.getVideoTracks()[0];
+          const capabilities = videoTrack.getCapabilities();
 
-      navigator.mediaDevices
-        .getUserMedia(constraints)
+          // 日志输出支持的分辨率范围
+          console.log(`相机支持的分辨率范围: ${capabilities.width.min}x${capabilities.height.min} 至 ${capabilities.width.max}x${capabilities.height.max}`);
+
+          // 停止临时流
+          tempStream.getTracks().forEach(track => track.stop());
+
+          // 根据支持的最大分辨率和选定的宽高比设置约束
+          const currentRatio = aspectRatios[currentAspectRatioIndex];
+          let targetWidth, targetHeight;
+
+          // 计算基于最大宽度的理想分辨率
+          if (capabilities.width && capabilities.width.max) {
+            targetWidth = Math.min(capabilities.width.max, 1920); // 限制在1920以内
+            targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
+
+            // 确保高度也在支持范围内
+            if (capabilities.height && capabilities.height.max && targetHeight > capabilities.height.max) {
+              targetHeight = capabilities.height.max;
+              targetWidth = Math.round(targetHeight * currentRatio.width / currentRatio.height);
+            }
+          } else {
+            // 如果无法获取最大分辨率，则使用默认值
+            targetWidth = 1920;
+            targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
+          }
+
+          const constraints = {
+            video: {
+              facingMode: facingMode,
+              width: { ideal: targetWidth },
+              height: { ideal: targetHeight }
+            }
+          };
+
+          console.log(`设置相机分辨率: ${targetWidth}x${targetHeight}`);
+
+          // 使用优化后的约束重新请求媒体流
+          return navigator.mediaDevices.getUserMedia(constraints);
+        })
         .then(function (s) {
           stream = s;
           video.srcObject = s;
-          // 获取视频轨道并显示设备支持的分辨率
-          const videoTrack = stream.getVideoTracks()[0];
-          const capabilities = videoTrack.getCapabilities();
-          console.log(`相机支持的分辨率范围: ${capabilities.width.min}x${capabilities.height.min} 至 ${capabilities.width.max}x${capabilities.height.max}`)
 
           // 视频元数据加载后获取实际宽高比例
           return new Promise((resolve) => {
             video.onloadedmetadata = () => {
               const videoWidth = video.videoWidth;
               const videoHeight = video.videoHeight;
-              console.log(`视频宽度: ${videoWidth}, 视频高度: ${videoHeight}, 比例: ${videoWidth / videoHeight}`);
+              console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
 
               // 计算宽高比并设置容器样式
               if (videoWidth && videoHeight) {
@@ -241,7 +280,7 @@
       } else if (rotateVideo === 270) {
         rotateVideo = 0;
       }
-      
+
       setCamera();
       setSquare();
     }
@@ -251,12 +290,29 @@
       currentAspectRatioIndex = (currentAspectRatioIndex + 1) % aspectRatios.length;
       const ratio = aspectRatios[currentAspectRatioIndex];
       console.log(`切换到 ${ratio.width}:${ratio.height} 比例`);
+      
+      // 更新按钮文本显示当前比例
+      const ratioButtons = document.querySelectorAll('button');
+      ratioButtons.forEach(button => {
+        if (button.textContent.includes('切换比例')) {
+          button.textContent = `切换比例 ${ratio.width}:${ratio.height}`;
+        }
+      });
+      
       initCamera(currentFacingMode);
     }
 
     // 页面加载时初始化摄像头
     document.addEventListener('DOMContentLoaded', () => {
       initCamera(currentFacingMode);
+      // 初始化时设置比例按钮的文本
+      const ratio = aspectRatios[currentAspectRatioIndex];
+      const ratioButtons = document.querySelectorAll('button');
+      ratioButtons.forEach(button => {
+        if (button.textContent.includes('切换比例')) {
+          button.textContent = `切换比例 ${ratio.width}:${ratio.height}`;
+        }
+      });
     });
 
     setCamera();
