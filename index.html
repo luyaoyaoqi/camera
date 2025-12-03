@@ -103,7 +103,7 @@
     let currentAspectRatioIndex = 0; // 当前使用的比例索引
     let currentDeviceId = null; // 当前选中的设备ID
 
-    // 初始化摄像头
+        // 初始化摄像头
     function initCamera(facingMode) {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -172,9 +172,10 @@
           const currentRatio = aspectRatios[currentAspectRatioIndex];
           let targetWidth, targetHeight;
 
-          // 使用摄像头支持的最大宽度
+          // 使用摄像头支持的最大宽度，但设置一个合理的上限
           if (capabilities.width && capabilities.width.max) {
-            targetWidth = capabilities.width.max;
+            // 设置最大宽度不超过4096，以防某些设备报告不合理的数值
+            targetWidth = Math.min(capabilities.width.max, 4096);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
 
             // 确保高度也在支持范围内
@@ -188,11 +189,11 @@
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
           }
 
-          // 构建最终约束条件
+          // 构建最终约束条件，使用min而不是ideal避免过于严格的约束
           const finalConstraints = {
             video: {
-              width: { ideal: targetWidth },
-              height: { ideal: targetHeight }
+              width: { min: 640, ideal: targetWidth },
+              height: { min: 480, ideal: targetHeight }
             }
           };
 
@@ -247,6 +248,61 @@
         })
         .catch(function (error) {
           console.error("无法获取摄像头: ", error);
+          // 如果是因为约束条件太严格导致的错误，尝试使用更宽松的约束
+          if (error.name === 'OverconstrainedError') {
+            console.log("尝试使用更宽松的约束条件...");
+            fallbackToBasicConstraints(facingMode);
+          } else {
+            alert("无法访问摄像头，请确保您已授予权限。错误信息: " + error.message);
+          }
+        });
+    }
+
+    // 当约束条件过于严格时的备用方案
+    function fallbackToBasicConstraints(facingMode) {
+      const basicConstraints = { video: {} };
+      
+      if (currentDeviceId) {
+        basicConstraints.video.deviceId = { exact: currentDeviceId };
+      } else if (facingMode) {
+        basicConstraints.video.facingMode = facingMode;
+      }
+      
+      navigator.mediaDevices.getUserMedia(basicConstraints)
+        .then(function (s) {
+          stream = s;
+          video.srcObject = s;
+          
+          // 显示摄像头信息
+          showCameraInfo();
+          
+          // 更新设备选择器
+          navigator.mediaDevices.enumerateDevices()
+            .then(devices => {
+              const videoDevices = devices.filter(device => device.kind === 'videoinput');
+              updateDeviceSelector(videoDevices);
+            });
+            
+          // 视频元数据加载后获取实际宽高比例
+          video.onloadedmetadata = () => {
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
+            
+            if (videoWidth && videoHeight) {
+              const aspectRatio = videoWidth / videoHeight;
+              video.style.width = `${video.offsetHeight * aspectRatio}px`;
+              video.setAttribute('width', video.style.width);
+              video.style.height = `${video.offsetHeight}px`;
+              video.setAttribute('height', video.style.height);
+              videoMask.style.width = video.style.height;
+              videoMask.style.height = video.style.height;
+              setSquare();
+            }
+          };
+        })
+        .catch(function (error) {
+          console.error("即使使用宽松约束也无法获取摄像头: ", error);
           alert("无法访问摄像头，请确保您已授予权限。错误信息: " + error.message);
         });
     }
@@ -275,7 +331,7 @@
       selector.style.display = 'inline-block';
     }
 
-    // 切换到指定设备
+        // 切换到指定设备
     function changeCameraDevice(deviceId) {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -307,9 +363,10 @@
           const currentRatio = aspectRatios[currentAspectRatioIndex];
           let targetWidth, targetHeight;
 
-          // 使用摄像头支持的最大宽度
+          // 使用摄像头支持的最大宽度，但设置一个合理的上限
           if (capabilities.width && capabilities.width.max) {
-            targetWidth = capabilities.width.max;
+            // 设置最大宽度不超过4096，以防某些设备报告不合理的数值
+            targetWidth = Math.min(capabilities.width.max, 4096);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
 
             // 确保高度也在支持范围内
@@ -323,12 +380,12 @@
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
           }
 
-          // 构建最终约束条件
+          // 构建最终约束条件，使用min而不是ideal避免过于严格的约束
           const constraints = {
             video: {
               deviceId: { exact: deviceId },
-              width: { ideal: targetWidth },
-              height: { ideal: targetHeight }
+              width: { min: 640, ideal: targetWidth },
+              height: { min: 480, ideal: targetHeight }
             }
           };
 
@@ -371,10 +428,63 @@
         })
         .catch(function (error) {
           console.error("无法切换到指定摄像头: ", error);
-          alert("无法切换到指定摄像头: " + error.message);
+          // 如果是因为约束条件太严格导致的错误，尝试使用更宽松的约束
+          if (error.name === 'OverconstrainedError') {
+            console.log("尝试使用更宽松的约束条件...");
+            fallbackToBasicConstraintsForDevice(deviceId);
+          } else {
+            alert("无法切换到指定摄像头: " + error.message);
+          }
         });
     }
 
+    // 当约束条件过于严格时的备用方案（针对特定设备）
+    function fallbackToBasicConstraintsForDevice(deviceId) {
+      const basicConstraints = {
+        video: {
+          deviceId: { exact: deviceId }
+        }
+      };
+      
+      navigator.mediaDevices.getUserMedia(basicConstraints)
+        .then(function (s) {
+          stream = s;
+          video.srcObject = s;
+          
+          // 显示摄像头信息
+          showCameraInfo();
+          
+          // 更新设备选择器
+          navigator.mediaDevices.enumerateDevices()
+            .then(devices => {
+              const videoDevices = devices.filter(device => device.kind === 'videoinput');
+              updateDeviceSelector(videoDevices);
+            });
+            
+          // 视频元数据加载后获取实际宽高比例
+          video.onloadedmetadata = () => {
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
+            
+            if (videoWidth && videoHeight) {
+              const aspectRatio = videoWidth / videoHeight;
+              video.style.width = `${video.offsetHeight * aspectRatio}px`;
+              video.setAttribute('width', video.style.width);
+              video.style.height = `${video.offsetHeight}px`;
+              video.setAttribute('height', video.style.height);
+              videoMask.style.width = video.style.height;
+              videoMask.style.height = video.style.height;
+              setSquare();
+            }
+          };
+        })
+        .catch(function (error) {
+          console.error("即使使用宽松约束也无法切换到指定摄像头: ", error);
+          alert("无法切换到指定摄像头: " + error.message);
+        });
+    }
+    
     // 显示当前摄像头信息
     function showCameraInfo() {
       const infoDiv = document.getElementById('camera-info');
