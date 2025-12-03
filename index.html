@@ -103,7 +103,7 @@
     let currentAspectRatioIndex = 0; // 当前使用的比例索引
     let currentDeviceId = null; // 当前选中的设备ID
 
-        // 初始化摄像头
+    // 初始化摄像头
     function initCamera(facingMode) {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -192,8 +192,8 @@
           // 构建最终约束条件，使用min而不是ideal避免过于严格的约束
           const finalConstraints = {
             video: {
-              width: { min: 640, ideal: targetWidth },
-              height: { min: 480, ideal: targetHeight }
+              width: { ideal: targetWidth },
+              height: { ideal: targetHeight }
             }
           };
 
@@ -261,34 +261,34 @@
     // 当约束条件过于严格时的备用方案
     function fallbackToBasicConstraints(facingMode) {
       const basicConstraints = { video: {} };
-      
+
       if (currentDeviceId) {
         basicConstraints.video.deviceId = { exact: currentDeviceId };
       } else if (facingMode) {
         basicConstraints.video.facingMode = facingMode;
       }
-      
+
       navigator.mediaDevices.getUserMedia(basicConstraints)
         .then(function (s) {
           stream = s;
           video.srcObject = s;
-          
+
           // 显示摄像头信息
           showCameraInfo();
-          
+
           // 更新设备选择器
           navigator.mediaDevices.enumerateDevices()
             .then(devices => {
               const videoDevices = devices.filter(device => device.kind === 'videoinput');
               updateDeviceSelector(videoDevices);
             });
-            
+
           // 视频元数据加载后获取实际宽高比例
           video.onloadedmetadata = () => {
             const videoWidth = video.videoWidth;
             const videoHeight = video.videoHeight;
             console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
-            
+
             if (videoWidth && videoHeight) {
               const aspectRatio = videoWidth / videoHeight;
               video.style.width = `${video.offsetHeight * aspectRatio}px`;
@@ -331,7 +331,7 @@
       selector.style.display = 'inline-block';
     }
 
-        // 切换到指定设备
+    // 切换到指定设备
     function changeCameraDevice(deviceId) {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
@@ -445,28 +445,28 @@
           deviceId: { exact: deviceId }
         }
       };
-      
+
       navigator.mediaDevices.getUserMedia(basicConstraints)
         .then(function (s) {
           stream = s;
           video.srcObject = s;
-          
+
           // 显示摄像头信息
           showCameraInfo();
-          
+
           // 更新设备选择器
           navigator.mediaDevices.enumerateDevices()
             .then(devices => {
               const videoDevices = devices.filter(device => device.kind === 'videoinput');
               updateDeviceSelector(videoDevices);
             });
-            
+
           // 视频元数据加载后获取实际宽高比例
           video.onloadedmetadata = () => {
             const videoWidth = video.videoWidth;
             const videoHeight = video.videoHeight;
             console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
-            
+
             if (videoWidth && videoHeight) {
               const aspectRatio = videoWidth / videoHeight;
               video.style.width = `${video.offsetHeight * aspectRatio}px`;
@@ -484,7 +484,7 @@
           alert("无法切换到指定摄像头: " + error.message);
         });
     }
-    
+
     // 显示当前摄像头信息
     function showCameraInfo() {
       const infoDiv = document.getElementById('camera-info');
@@ -507,12 +507,15 @@
 
     // 拍照函数
     function takePhoto() {
+      // 使用视频实际分辨率而不是显示尺寸
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
       const displayWidth = video.offsetWidth;
       const displayHeight = video.offsetHeight;
 
       // 根据旋转角度确定Canvas尺寸
-      const canvasWidth = (rotateVideo === 90 || rotateVideo === 270) ? displayHeight : displayWidth;
-      const canvasHeight = (rotateVideo === 90 || rotateVideo === 270) ? displayWidth : displayHeight;
+      const canvasWidth = (rotateVideo === 90 || rotateVideo === 270) ? videoHeight : videoWidth;
+      const canvasHeight = (rotateVideo === 90 || rotateVideo === 270) ? videoWidth : videoHeight;
       canvas.width = canvasWidth;
       canvas.height = canvasHeight;
 
@@ -532,13 +535,13 @@
         ctx.rotate(-90 * Math.PI / 180);
       }
 
-      // 绘制视频内容
+      // 绘制视频内容，使用实际分辨率而不是显示尺寸
       ctx.drawImage(
         video,
         0,
         0,
-        displayWidth,
-        displayHeight);
+        videoWidth,
+        videoHeight);
 
       // 创建并显示图片
       const img = document.createElement("img");
@@ -565,7 +568,6 @@
       photoContainer.innerHTML = '';
       photoContainer.appendChild(img);
     }
-
     // 控制正方形显示
     function setSquare() {
       if (imgIsSquare) {
