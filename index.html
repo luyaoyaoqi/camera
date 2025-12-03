@@ -59,12 +59,16 @@
       gap: 5px;
     }
 
-    #device-selector {
+    #device-selector,
+    #resolution-selector {
       padding: 10px;
       font-size: 16px;
       margin: 5px;
       margin-top: 16px;
       max-width: 200px;
+      background-color: #e5e5e5;
+      padding: 12px 20px;
+      border-radius: 2px;
     }
   </style>
 </head>
@@ -83,6 +87,15 @@
     <button onclick="rotateCamera()">旋转相机 🔄</button>
     <button onclick="switchAspectRatio()">相机比例 16:9</button>
     <select id="device-selector" onchange="changeCameraDevice(this.value)" style="display:none;"></select>
+    <select id="resolution-selector" onchange="changeResolution(this.value)">
+      <option value="7680">8K</option>
+      <option value="3840">4K</option>
+      <option value="2560">2K</option>
+      <option value="1920" selected>1080P</option>
+      <option value="1280">720P</option>
+      <option value="640">VGA(640×480)</option>
+      <option value="320">QVGA(320×240)</option>
+    </select>
   </div>
   <div id="photo-container"><canvas id="canvas"></canvas></div>
 
@@ -102,6 +115,7 @@
     ];
     let currentAspectRatioIndex = 0; // 当前使用的比例索引
     let currentDeviceId = null; // 当前选中的设备ID
+    let maxResolution = 4096; // 最大分辨率设置，默认为4096
 
     // 初始化摄像头
     function initCamera(facingMode) {
@@ -174,8 +188,8 @@
 
           // 使用摄像头支持的最大宽度，但设置一个合理的上限
           if (capabilities.width && capabilities.width.max) {
-            // 设置最大宽度不超过4096，以防某些设备报告不合理的数值
-            targetWidth = Math.min(capabilities.width.max, 4096);
+            // 使用配置的最大分辨率，以防某些设备报告不合理的数值
+            targetWidth = Math.min(capabilities.width.max, maxResolution);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
 
             // 确保高度也在支持范围内
@@ -185,7 +199,7 @@
             }
           } else {
             // 如果无法获取最大分辨率，则使用默认值
-            targetWidth = 1920;
+            targetWidth = Math.min(1920, maxResolution);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
           }
 
@@ -365,8 +379,8 @@
 
           // 使用摄像头支持的最大宽度，但设置一个合理的上限
           if (capabilities.width && capabilities.width.max) {
-            // 设置最大宽度不超过4096，以防某些设备报告不合理的数值
-            targetWidth = Math.min(capabilities.width.max, 4096);
+            // 使用配置的最大分辨率，以防某些设备报告不合理的数值
+            targetWidth = Math.min(capabilities.width.max, maxResolution);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
 
             // 确保高度也在支持范围内
@@ -376,7 +390,7 @@
             }
           } else {
             // 如果无法获取最大分辨率，则使用默认值
-            targetWidth = 1920;
+            targetWidth = Math.min(1920, maxResolution);
             targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
           }
 
@@ -384,8 +398,8 @@
           const constraints = {
             video: {
               deviceId: { exact: deviceId },
-              width: { min: 640, ideal: targetWidth },
-              height: { min: 480, ideal: targetHeight }
+              width: { ideal: targetWidth },
+              height: { ideal: targetHeight }
             }
           };
 
@@ -665,6 +679,12 @@
       });
 
       // 重新初始化摄像头，但保持当前设备选择
+      initCamera(currentFacingMode);
+    }
+
+    // 改变分辨率设置
+    function changeResolution(resolution) {
+      maxResolution = parseInt(resolution);
       initCamera(currentFacingMode);
     }
 
