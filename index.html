@@ -1,8 +1,6 @@
 <!DOCTYPE html>
-<meta charset="utf-8"></meta>
-<html>
-
 <head>
+  <meta charset="utf-8"></meta>
   <title>网页拍照示例（带相机切换）</title>
   <style>
     /* 添加基本样式 */
@@ -44,6 +42,28 @@
       margin-top: 20px;
       text-align: center;
     }
+    
+    #camera-info {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #666;
+    }
+    
+    #camera-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+    }
+    
+    #device-selector {
+      padding: 10px;
+      font-size: 16px;
+      margin: 5px;
+      margin-top: 16px;
+      max-width: 200px;
+    }
   </style>
 </head>
 
@@ -53,11 +73,15 @@
     <video id="video" autoplay></video>
     <div id="video-mask"></div>
   </div>
-  <button onclick="takePhoto()">拍照 📷</button>
-  <button onclick="switchSquare()">正方形裁切 ◼️</button>
-  <button onclick="switchCamera()">切换相机 🔄</button>
-  <button onclick="rotateCamera()">旋转相机 🔄</button>
-  <button onclick="switchAspectRatio()">相机比例 16:9</button>
+  <div id="camera-info"></div>
+  <div id="camera-controls">
+    <button onclick="takePhoto()">拍照 📷</button>
+    <button onclick="switchSquare()">正方形裁切 ◼️</button>
+    <button onclick="switchCamera()">切换相机 🔄</button>
+    <button onclick="rotateCamera()">旋转相机 🔄</button>
+    <button onclick="switchAspectRatio()">相机比例 16:9</button>
+    <select id="device-selector" onchange="changeCameraDevice(this.value)" style="display:none;"></select>
+  </div>
   <div id="photo-container"><canvas id="canvas"></canvas></div>
 
   <script>
@@ -75,6 +99,7 @@
       { width: 4, height: 3 }    // 4:3 比例
     ];
     let currentAspectRatioIndex = 0; // 当前使用的比例索引
+    let currentDeviceId = null; // 当前选中的设备ID
 
     // 初始化摄像头
     function initCamera(facingMode) {
@@ -82,64 +107,73 @@
         stream.getTracks().forEach(track => track.stop());
       }
 
-      // 首先获取摄像头能力，再设置合适的分辨率
+      // 获取所有视频输入设备
       navigator.mediaDevices.enumerateDevices()
         .then(devices => {
           const videoDevices = devices.filter(device => device.kind === 'videoinput');
-          if (videoDevices.length > 0) {
-            // 先请求一个基础流以获取摄像头能力
-            return navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
-          } else {
+          console.log('可用的摄像头设备:', videoDevices);
+          
+          // 更新设备选择器
+          updateDeviceSelector(videoDevices);
+          
+          if (videoDevices.length === 0) {
             throw new Error("未找到视频设备");
           }
-        })
-        .then(tempStream => {
-          // 获取视频轨道及其能力
-          const videoTrack = tempStream.getVideoTracks()[0];
-          const capabilities = videoTrack.getCapabilities();
-
-          // 日志输出支持的分辨率范围
-          console.log(`相机支持的分辨率范围: ${capabilities.width.min}x${capabilities.height.min} 至 ${capabilities.width.max}x${capabilities.height.max}`);
-
-          // 停止临时流
-          tempStream.getTracks().forEach(track => track.stop());
-
-          // 根据支持的最大分辨率和选定的宽高比设置约束
+          
+          // 构建约束条件
           const currentRatio = aspectRatios[currentAspectRatioIndex];
-          let targetWidth, targetHeight;
-
-          // 计算基于最大宽度的理想分辨率
-          if (capabilities.width && capabilities.width.max) {
-            targetWidth = Math.min(capabilities.width.max, 1920); // 限制在1920以内
-            targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
-
-            // 确保高度也在支持范围内
-            if (capabilities.height && capabilities.height.max && targetHeight > capabilities.height.max) {
-              targetHeight = capabilities.height.max;
-              targetWidth = Math.round(targetHeight * currentRatio.width / currentRatio.height);
-            }
-          } else {
-            // 如果无法获取最大分辨率，则使用默认值
-            targetWidth = 1920;
-            targetHeight = Math.round(targetWidth * currentRatio.height / currentRatio.width);
-          }
-
-          const constraints = {
+          let constraints = {
             video: {
-              facingMode: facingMode,
-              width: { ideal: targetWidth },
-              height: { ideal: targetHeight }
+              width: { ideal: 1920 },
+              height: { ideal: Math.round(1920 * currentRatio.height / currentRatio.width) }
             }
           };
-
-          console.log(`设置相机分辨率: ${targetWidth}x${targetHeight}`);
-
-          // 使用优化后的约束重新请求媒体流
+          
+          // 如果已有选中的设备ID，则优先使用该设备
+          if (currentDeviceId && videoDevices.some(device => device.deviceId === currentDeviceId)) {
+            constraints.video.deviceId = { exact: currentDeviceId };
+            console.log('使用之前选中的摄像头设备');
+          } else {
+            // 否则查找具有指定facingMode的设备
+            let targetDevice = null;
+            if (facingMode) {
+              targetDevice = videoDevices.find(device => 
+                device.label.toLowerCase().includes(facingMode === 'environment' ? 'back' : 'front') ||
+                device.label.toLowerCase().includes(facingMode === 'environment' ? '后' : '前')
+              );
+            }
+            
+            // 如果没有找到特定方向的设备，则使用第一个设备
+            if (!targetDevice && videoDevices.length > 0) {
+              targetDevice = videoDevices[0];
+            }
+            
+            // 如果找到了具体设备，则使用deviceId约束
+            if (targetDevice) {
+              constraints.video.deviceId = { exact: targetDevice.deviceId };
+              currentDeviceId = targetDevice.deviceId; // 保存设备ID
+              console.log('使用摄像头设备:', targetDevice.label);
+            } else if (facingMode) {
+              // 否则回退到facingMode约束
+              constraints.video.facingMode = facingMode;
+            }
+          }
+          
           return navigator.mediaDevices.getUserMedia(constraints);
         })
         .then(function (s) {
           stream = s;
           video.srcObject = s;
+
+          // 显示摄像头信息
+          showCameraInfo();
+          
+          // 更新设备选择器
+          navigator.mediaDevices.enumerateDevices()
+            .then(devices => {
+              const videoDevices = devices.filter(device => device.kind === 'videoinput');
+              updateDeviceSelector(videoDevices);
+            });
 
           // 视频元数据加载后获取实际宽高比例
           return new Promise((resolve) => {
@@ -166,8 +200,109 @@
         })
         .catch(function (error) {
           console.error("无法获取摄像头: ", error);
-          alert("无法访问摄像头，请确保您已授予权限。");
+          alert("无法访问摄像头，请确保您已授予权限。错误信息: " + error.message);
         });
+    }
+
+    // 更新设备选择器
+    function updateDeviceSelector(devices) {
+      const selector = document.getElementById('device-selector');
+      if (devices.length <= 1) {
+        selector.style.display = 'none';
+        return;
+      }
+      
+      selector.innerHTML = '';
+      devices.forEach((device, index) => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.text = device.label || `摄像头 ${index + 1}`;
+        selector.appendChild(option);
+      });
+      
+      // 选择当前使用的设备
+      if (currentDeviceId) {
+        selector.value = currentDeviceId;
+      }
+      
+      selector.style.display = 'inline-block';
+    }
+
+    // 切换到指定设备
+    function changeCameraDevice(deviceId) {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      // 保存当前设备ID
+      currentDeviceId = deviceId;
+
+      const currentRatio = aspectRatios[currentAspectRatioIndex];
+      const constraints = {
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 1920 },
+          height: { ideal: Math.round(1920 * currentRatio.height / currentRatio.width) }
+        }
+      };
+
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(function (s) {
+          stream = s;
+          video.srcObject = s;
+
+          // 显示摄像头信息
+          showCameraInfo();
+          
+          // 更新设备选择器
+          navigator.mediaDevices.enumerateDevices()
+            .then(devices => {
+              const videoDevices = devices.filter(device => device.kind === 'videoinput');
+              updateDeviceSelector(videoDevices);
+            });
+
+          // 视频元数据加载后获取实际宽高比例
+          video.onloadedmetadata = () => {
+            const videoWidth = video.videoWidth;
+            const videoHeight = video.videoHeight;
+            console.log(`实际视频分辨率: ${videoWidth}x${videoHeight}, 比例: ${videoWidth / videoHeight}`);
+
+            if (videoWidth && videoHeight) {
+              const aspectRatio = videoWidth / videoHeight;
+              video.style.width = `${video.offsetHeight * aspectRatio}px`;
+              video.setAttribute('width', video.style.width);
+              video.style.height = `${video.offsetHeight}px`;
+              video.setAttribute('height', video.style.height);
+              videoMask.style.width = video.style.height;
+              videoMask.style.height = video.style.height;
+              setSquare();
+            }
+          };
+        })
+        .catch(function (error) {
+          console.error("无法切换到指定摄像头: ", error);
+          alert("无法切换到指定摄像头: " + error.message);
+        });
+    }
+
+    // 显示当前摄像头信息
+    function showCameraInfo() {
+      const infoDiv = document.getElementById('camera-info');
+      if (stream && stream.getVideoTracks().length > 0) {
+        const track = stream.getVideoTracks()[0];
+        const settings = track.getSettings();
+        const capabilities = track.getCapabilities();
+        
+        let info = `当前摄像头: ${settings.deviceId ? settings.deviceId.substring(0, 8) : '未知'}`;
+        info += ` | 分辨率: ${settings.width}x${settings.height}`;
+        if (settings.frameRate) {
+          info += ` | 帧率: ${Math.round(settings.frameRate)}fps`;
+        }
+        
+        infoDiv.textContent = info;
+      } else {
+        infoDiv.textContent = '未连接摄像头';
+      }
     }
 
     // 拍照函数
@@ -231,8 +366,7 @@
       photoContainer.appendChild(img);
     }
 
-
-    //控制正方形显示
+    // 控制正方形显示
     function setSquare() {
       if (imgIsSquare) {
         videoContainer.style.width = video.style.height;
@@ -259,10 +393,38 @@
       setSquare();
     }
 
-    // 切换相机函数
+    // 切换相机函数 - 改进版
     function switchCamera() {
-      currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-      initCamera(currentFacingMode);
+      navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          if (videoDevices.length <= 1) {
+            // 如果只有一个或没有摄像头，使用facingMode方式切换
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            initCamera(currentFacingMode);
+          } else {
+            // 如果有多个摄像头，让用户手动选择或者循环切换
+            cycleCameraDevice(videoDevices);
+          }
+        })
+        .catch(error => {
+          console.error("无法枚举设备: ", error);
+          // 回退到原来的方式
+          currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+          initCamera(currentFacingMode);
+        });
+    }
+
+    // 循环切换摄像头设备
+    function cycleCameraDevice(devices) {
+      if (currentDeviceId) {
+        const currentIndex = devices.findIndex(device => device.deviceId === currentDeviceId);
+        const nextIndex = (currentIndex + 1) % devices.length;
+        changeCameraDevice(devices[nextIndex].deviceId);
+      } else {
+        // 如果当前没有活动流，选择第一个设备
+        changeCameraDevice(devices[0].deviceId);
+      }
     }
 
     // 旋转相机函数
@@ -293,13 +455,14 @@
       console.log(`切换到 ${ratio.width}:${ratio.height} 比例`);
       
       // 更新按钮文本显示当前比例
-      const ratioButtons = document.querySelectorAll('button');
-      ratioButtons.forEach(button => {
-        if (button.textContent.includes('切换比例')) {
-          button.textContent = `切换比例 ${ratio.width}:${ratio.height}`;
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(button => {
+        if (button.textContent.includes('相机比例')) {
+          button.textContent = `相机比例 ${ratio.width}:${ratio.height}`;
         }
       });
       
+      // 重新初始化摄像头，但保持当前设备选择
       initCamera(currentFacingMode);
     }
 
@@ -308,10 +471,10 @@
       initCamera(currentFacingMode);
       // 初始化时设置比例按钮的文本
       const ratio = aspectRatios[currentAspectRatioIndex];
-      const ratioButtons = document.querySelectorAll('button');
-      ratioButtons.forEach(button => {
-        if (button.textContent.includes('切换比例')) {
-          button.textContent = `切换比例 ${ratio.width}:${ratio.height}`;
+      const buttons = document.querySelectorAll('button');
+      buttons.forEach(button => {
+        if (button.textContent.includes('相机比例')) {
+          button.textContent = `相机比例 ${ratio.width}:${ratio.height}`;
         }
       });
     });
